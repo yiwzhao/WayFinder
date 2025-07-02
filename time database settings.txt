@@ -1,0 +1,27 @@
+/*-- 连接： psql -h localhost -U postgres -d meeting_rooms*/
+
+CREATE DATABASE meeting_rooms;
+CREATE EXTENSION IF NOT EXISTS btree_gist;  -- tsrange 索引
+
+CREATE TABLE IF NOT EXISTS rooms (
+    room_id   TEXT PRIMARY KEY,
+    name      TEXT NOT NULL,
+    level     INT,
+    grid      TEXT,
+    capacity  INT,
+    type      TEXT
+);
+
+CREATE TABLE IF NOT EXISTS bookings (
+    booking_id SERIAL PRIMARY KEY,
+    room_id    TEXT REFERENCES rooms(room_id) ON DELETE CASCADE,
+    timeslot   TSRANGE NOT NULL,
+    booked_by  TEXT,
+    title      TEXT,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+/* 同一房间时间段不能重叠 */
+ALTER TABLE bookings
+  ADD CONSTRAINT no_overlap
+  EXCLUDE USING gist (room_id WITH =, timeslot WITH &&);
