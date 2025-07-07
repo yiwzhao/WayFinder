@@ -3,6 +3,7 @@ from neo4j import GraphDatabase
 from openai import OpenAI
 import math
 import os
+from fastmcp import FastMCP
 
 class EndeavorRAG:
     def __init__(self, uri, user, password, openai_api_key):
@@ -147,9 +148,9 @@ class EndeavorRAG:
     def _vector_to_direction(self, dx, dy):
         angle = math.degrees(math.atan2(dy, dx)) % 360
         dirs = [
-            (0, "east"), (45, "northeast"), (90, "north"),
-            (135, "northwest"), (180, "west"),
-            (225, "southwest"), (270, "south"), (315, "southeast")
+            (0, "south"), (45, "southeast"), (90, "east"),
+            (135, "northeast"), (180, "north"),
+            (225, "northwest"), (270, "west"), (315, "southwest")
         ]
         closest = min(dirs, key=lambda d: abs(d[0] - angle))
         return closest[1]
@@ -157,8 +158,12 @@ class EndeavorRAG:
 
 
 
-
-if __name__ == "__main__":
+mcp = FastMCP("EndeavorRAG 🚀")
+@mcp.tool
+def endeavor_rag_directory(user_input: str) -> str:
+    """
+    Use this tool to get directions from one location to another in the Endeavor building.
+    """
     URI = "neo4j://localhost:7687"
     AUTH = ("neo4j", "graphrag")
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -167,7 +172,7 @@ if __name__ == "__main__":
 
     #user_input = "How do I get from Force Field to Cafeteria?"
     #user_input = "How do I get from Jabba's Palace to Cafeteria?"
-    user_input = "How do I get from Cafeteria to WestWorld?"
+    #user_input = "How do I get from Cafeteria to WestWorld?"
     try:
         start, end = rag.parse_user_query(user_input)
         path = rag.get_shortest_path(start, end)
@@ -178,3 +183,9 @@ if __name__ == "__main__":
         print("Error:", e)
     finally:
         rag.close()
+    return instructions
+
+if __name__ == "__main__":
+    print("Starting EndeavorRAG MCP server...")
+    mcp.run(transport="http", host="0.0.0.0", port=8008, path="/mcp")
+    
