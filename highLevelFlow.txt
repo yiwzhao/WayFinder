@@ -1,0 +1,16 @@
+User NL query
+      │
+      ▼
+1. Parse →  participants’ grids  +  time range
+      │
+      ▼
+2. Neo4j →  nearest rooms for every participant
+      │        (pre-computed r.distance on :NEAR edges)
+      ▼
+3. Intersect / rank by average distance
+      │
+      ▼
+4. Postgres →  filter rooms that are FREE in the time slot
+      │
+      ▼
+5. Return top-N rooms + reason (“closest average distance”, “capacity X”, …)

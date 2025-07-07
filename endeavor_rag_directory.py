@@ -6,14 +6,17 @@ import os
 from fastmcp import FastMCP
 
 class EndeavorRAG:
-    def __init__(self, uri, user, password, openai_api_key):
+    def __init__(self, uri, user, password, openai_api_key, base_url=None):
         self.driver = GraphDatabase.driver(uri, auth=(user, password))
-        self.llm = OpenAI(api_key=openai_api_key)
+        self.llm = OpenAI(
+            api_key=openai_api_key,
+            base_url=base_url if base_url else "https://api.openai.com/v1"  # fallback to OpenAI if not NVIDIA
+        )
 
     def close(self):
         self.driver.close()
 
-    def parse_user_query(self, text):
+    def parse_user_query_with_openai(self, text):
         """
         Use LLM to extract start and end locations from a natural language query.
         """
@@ -33,6 +36,37 @@ class EndeavorRAG:
         match = re.search(r'\{.*?\}', reply, re.DOTALL)
         if match:
             locs = eval(match.group())  # Simple JSON-like extraction
+            return locs['start'], locs['end']
+        raise ValueError("Could not parse locations from LLM response")
+
+    def parse_user_query(self, text):
+        prompt = f"""
+            You are a helpful assistant that extracts locations from natural language navigation queries.
+
+            Extract the start and end locations from the following sentence:
+            "{text}"
+
+            Return a JSON object like this: {{"start": "Room A", "end": "Room B"}}
+        """
+        response = self.llm.chat.completions.create(
+            model="qwen/qwen3-235b-a22b",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
+            top_p=0.7,
+            max_tokens=1024,
+            stream=True,
+            extra_body={"chat_template_kwargs": {"thinking": True}}
+        )
+
+        output = ""
+        for chunk in response:
+            content = getattr(chunk.choices[0].delta, "content", "")
+            if content:
+                output += content
+
+        match = re.search(r'\{.*?\}', output, re.DOTALL)
+        if match:
+            locs = eval(match.group())
             return locs['start'], locs['end']
         raise ValueError("Could not parse locations from LLM response")
 
@@ -86,7 +120,7 @@ class EndeavorRAG:
             return "No valid path found or coordinates missing."
         return self.generate_directions(node_infos)
 
-    def render_path_to_instruction(self, path):
+    def render_path_to_instruction_with_openai(self, path):
         if not path:
             return "Sorry, I couldn't find a valid path."
         if len(path) == 1:
@@ -107,6 +141,41 @@ class EndeavorRAG:
         )
         return response.choices[0].message.content.strip()
 
+    def render_path_to_instruction(self, path):
+        if not path:
+            return "Sorry, I couldn't find a valid path."
+        if len(path) == 1:
+            return f"You are already at {path[0]}."
+
+        node_infos = self.get_node_details(path)
+        if not node_infos:
+            return "No valid path found or coordinates missing."
+
+        path_description = self.generate_directions(node_infos)
+
+        prompt = f"""
+            You are a navigation assistant. Convert the following ordered list of locations into step-by-step natural English walking directions:
+
+            Path: {path_description}
+        """
+
+        response = self.llm.chat.completions.create(
+            model="qwen/qwen3-235b-a22b",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
+            top_p=0.7,
+            max_tokens=1024,
+            stream=True,
+            extra_body={"chat_template_kwargs": {"thinking": True}}
+        )
+
+        output = ""
+        for chunk in response:
+            content = getattr(chunk.choices[0].delta, "content", "")
+            if content:
+                output += content
+
+        return output.strip()
     
     def get_node_details(self, path_names):
         with self.driver.session(database="neo4j") as session:
@@ -166,9 +235,15 @@ def endeavor_rag_directory(user_input: str) -> str:
     """
     URI = "neo4j://localhost:7687"
     AUTH = ("neo4j", "graphrag")
-    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+    #OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+    OPENAI_API_KEY = os.getenv("NV_API_KEY")
 
-    rag = EndeavorRAG(URI, AUTH[0], AUTH[1], OPENAI_API_KEY)
+    #rag = EndeavorRAG(URI, AUTH[0], AUTH[1], OPENAI_API_KEY)
+    rag = EndeavorRAG(
+        URI, AUTH[0], AUTH[1],
+        OPENAI_API_KEY,
+        base_url="https://integrate.api.nvidia.com/v1"
+    )
 
     #user_input = "How do I get from Force Field to Cafeteria?"
     #user_input = "How do I get from Jabba's Palace to Cafeteria?"
