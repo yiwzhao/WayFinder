@@ -1,12 +1,18 @@
 import psycopg2
 from datetime import datetime
 from endeavor_graph import EndeavorGraph
+from heapq import heappush, heappop
+
 
 class PostgresBookingManager:
     def __init__(self, dbname, user, password, host="localhost", port=5432):
-        self.conn = psycopg2.connect(dbname=dbname, user=user, password=password, host=host, port=port)
+        self.conn = psycopg2.connect(
+            dbname=dbname, user=user, password=password,
+            host=host, port=port
+        )
 
-    def is_room_available(self, room_id, start_time: datetime, end_time: datetime):
+    def is_room_available(self, room_id, start_time: datetime, 
+                         end_time: datetime):
         query = """
             SELECT COUNT(*) FROM bookings
             WHERE room_id = %s AND timeslot && tsrange(%s, %s)
@@ -31,29 +37,44 @@ class PostgresBookingManager:
             return cur.fetchall()
 
 
-
 class MeetingRoomRecommender:
-    def __init__(self, graph: EndeavorGraph, booking_manager: PostgresBookingManager):
+    def __init__(self, graph: EndeavorGraph, 
+                 booking_manager: PostgresBookingManager):
         self.graph = graph
         self.booking_manager = booking_manager
 
-    def recommend(self, user_grids: list[str], start_time: datetime, end_time: datetime, top_k=3):
-        available_rooms = self.booking_manager.get_available_rooms(start_time, end_time)
+    def recommend(self, user_grids: list[str], start_time: datetime, 
+                  end_time: datetime, top_k=3):
+        available_rooms = self.booking_manager.get_available_rooms(
+            start_time, end_time
+        )
         if not available_rooms:
             return []
 
-        # 计算到每个会议室的平均距离
-        recommendations = []
+        # Use min-heap to efficiently find top-k closest rooms
+        room_heap = []
+        
         for room in available_rooms:
             room_id, name, grid, capacity, type_ = room
             distances = []
+            
+            # Calculate distance from each user grid to this room
             for user_grid in user_grids:
                 dist = self.graph._calculate_grid_distance(user_grid, grid)
                 if dist is not None:
                     distances.append(dist)
+            
+            # If we have valid distances, calculate average and add to heap
             if distances:
                 avg_dist = sum(distances) / len(distances)
-                recommendations.append((name, grid, avg_dist, capacity, type_))
-
-        recommendations.sort(key=lambda x: x[2])  # 按平均距离排序
-        return recommendations[:top_k]
+                heappush(room_heap, (avg_dist, name, grid, capacity, type_))
+        
+        # Extract top-k rooms from heap
+        recommendations = []
+        for _ in range(min(top_k, len(room_heap))):
+            if room_heap:
+                dist, name, grid, capacity, type_ = heappop(room_heap)
+                recommendations.append((name, grid, dist, capacity, type_))
+        
+        return recommendations
+    

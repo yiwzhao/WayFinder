@@ -1,0 +1,4 @@
+neo4j
+openai
+psycopg2-binary
+fastmcp
