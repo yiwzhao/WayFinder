@@ -11,7 +11,11 @@ pg_manager = PostgresBookingManager(
     port=5432
 )
 
-graph = EndeavorGraph(uri="neo4j://localhost:7687", user="neo4j", password="graphrag")
+graph = EndeavorGraph(
+    uri="neo4j://localhost:7687", 
+    user="neo4j", 
+    password="neo4j123"
+)
 
 recommender = MeetingRoomRecommender(graph, pg_manager)
 
@@ -26,7 +30,8 @@ results = recommender.recommend(user_grids, start_time, end_time, top_k=3)
 # === print results ===
 print("Top recommended meeting rooms:")
 for name, grid, dist, cap, typ in results:
-    print(f"- {name} (Grid: {grid}, Distance: {dist:.2f}, Capacity: {cap}, Type: {typ})")
+    print(f"- {name} (Grid: {grid}, Distance: {dist:.2f}, "
+          f"Capacity: {cap}, Type: {typ})")
 
 # === close Neo4j connection ===
 graph.close()
